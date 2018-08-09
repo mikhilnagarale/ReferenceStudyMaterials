@@ -1,0 +1,106 @@
+Statistics on tables/Join Indexes
+	•Statistics collection is often the solution for query performance issues
+	•Collect stats on joining columns of PERM/Volatile/GTT tables & Join Indexes.
+	•Collect stats on WHERE clause/predicates columns that have skewed values.
+	•Use DIAGNOSTICS HELPSTATS ON FOR SESSION – for stats recommendation & collect stats only which helps change in query plan – mainly single column {Highconf}.
+	•Use MAXVALUELENGTH feature if MULTI COLUMN stats length exceeds 25 bytes.
+	•Multi column stats should be collected when all columns are joined to a single table and not multiple tables.
+	•Multicolumn stats should be collected when one of the columns is used in where clause and others in join condition.
+	•Column ordering in stats collection matters when one column is used in where clause and other in joining condition.
+
+EXPLAIN Plan
+	•Check for confidence level of stats (high/low/no confidence statements).
+	•Join preparation steps (redistribution/duplication).
+	•Smaller tables/spool should be duplicated/redistributed.
+	•Partition elimination for PPI tables (single/n partitions) , dynamic partition elimination, rowkey based join.
+	•Check if “…’all-rows’ scan…” can be avoided mainly for medium to large tables.
+	•Check for unintended product/cross joins.
+	•Avoid data types conversion , like { (-9.99999999999999E-999') }.
+	•Check for translation of character sets.
+	•Check for usage of Secondary Index, Join Index, Hash Indexes defined.
+	•Avoid translations (TRANSLATE((( … ))USING LATIN_TO_UNICODE)), by using same character set for both columns in a join condition.
+
+Join conditions / WHERE Clause
+	•The goal is to retrieve from the table that has the most selective filter so there are fewer rows passed to the next step. 
+	 If the next step is a join, then there would be fewer rows to be joined efficiently.
+	•Make sure the larger tables are not redistributed/duplicated due to joining conditions, in such cases try to reconsider PI choices.
+	•If possible try to include PI/PPI columns in join/where for using ROWKEY based Merge Joins.
+	•Make sure proper WHERE clauses are provided to avoid full table scans.
+	•Make sure the joining columns have same data types to avoid translations.
+
+Primary Index for tables/Join Index
+	•Primary Index should be based on Access Demographics, Distribution Demographics and Volatility.
+	•Try to use the columns most frequently used in joining as PI definition to avoid redistribution/duplications.
+	•In case of Multi Column PI make sure all the columns are used in joins or try to reduce the number of columns in the PI.
+	•In “CREATE TABLE AS” statements , make sure to specify the correct PI.
+	•Instead of “CREATE TABLE AS”, use CREATE TABLE followed by INSERT/SELECT statement . 
+	 “CREATE TABLE AS” will lock dbc tables for the entire duration of the transaction.
+	•For Large(Fact) tables keep PI as the columns used to join only one table and not a combination of columns used to join multiple tables. 
+	 Ensure minimum skew.
+
+Partitioned Primary Index for tables/Join Index
+	•Partition tables on columns used in Range based queries.
+	•Increase query efficiency by avoiding FTS without the overhead and maintenance of SI.
+	•Partition should be preferred on DATE columns.
+	•If possible PPI column should also be part of joining columns this helps in avoiding the PPI overhead for the PI access queries.
+	•DELETE from, and INSERT into 1 complete partition are faster.
+
+Multi Level PPI(MLPPI) for tables/Join Index
+	•Consider MLPPI if more than 1 column is used in Range based queries or WHERE CLAUSE.
+	•Keep the most used column as the outer most partition.
+	•Do not keep too many levels of MLPPI. Generally 2-3 levels of PPI are useful for queries.
+	•The number of partitions at the lower(inner) levels should be minimal.
+
+Unmatched Data Types
+	•While joining columns with unmatched data types, Teradata converts one of the columns to the other format to be able to check if the values stored are the same. 
+	 This is an additional calculation which requires resources and therefore will impact query performance.
+	•If both join columns have the same data type (data type class) a join would not need a redistribution and a merge join could be done. 
+	 But if the data types are different at least one table would need to be redistributed after the implicit conversion.
+	•In cases where the translation is character to numeric, the redistributed by the hash code of (<col>(FLOAT, FORMAT '-9.99999999999999E-999')(FLOAT)).
+	The Conversion can be quite expensive when large volumes of data are involved; as stats and Indexes will be ignored when data types do not match.
+	
+Character Set Mismatch
+	•Check if the columns with character data type have the same name but have different character sets.
+	 VARCHAR - character limit must be specified
+
+MVC – Multi Value Compression
+	•MVC on large tables reduces space requirements.
+	•Reduces IO and Spool in queries and therefore improves performance.
+	•Compression is case-sensitive so make sure you add correct case while specifying compression values.
+	•Values that only appear in a very small percentage of rows should not be compressed.
+	•No MVC on calculated columns (derived char columns or aggregated numeric ones). It increases the CPU consumption.
+	•Use COMPRESS on all Nullable columns.	 
+	 
+SOFT Referential Integrity(RI)
+	•Define SOFT RI where joins can be avoided.
+	•SOFT RI provides a benefit when a table is included in the join simply for validation purposes, 
+	 i.e. the RI columns from the joined table are only used in the join condition(s) and they are joined using an equality condition.
+	•SOFT RI gets used when only the RI columns of the joining table are not used in the query i.e. Projection & Predicates.
+	•SOFT RI has no overhead during loads.
+	•Soft RI is defined by specifying the WITH NO CHECK option phrase for a references constraint. 
+	 When we specify this clause the database does not enforce the defined RI.	 
+	 
+Query Rewrite
+	•Specify column list in SELECT instead of SELECT * if only a subset of columns need to be projected.
+	•Try to use equality conditions on index columns.
+	•Try to use BETWEEN clause instead of long IN list.
+	•Avoid using function/expression in WHERE clause. Indexes/Stats does not get used when any functions are used on columns in WHERE clause.
+
+Non Unique Secondary Index
+	•SI gets used in queries only when it is strongly selective.
+	•Chances of SI getting used is high when the SI value returns 5-10% of the rows, in other words SI should be defined if there are less rows/value.
+	•Make sure the SI created is used in queries by checking DBQL Objects and Explain plan.
+	•If not, drop SI to avoid overhead during loads.
+	•Check that the CPU savings due to SI benefit both on frontend & ETL.
+	•Try secondary index as the one of the last options, since it causes CPU and IO overhead when the underlying tables are inserted/updated/deleted from.
+
+Join Index
+	•Try a join Index for covering many queries using same the same set of tables with the same join.
+	•Make sure that the Join index created is used in queries by evaluating DBQL logging.
+	•PI/PPI for the JI should follow same guidelines as for defining base table PI/PPI.
+	•Single Table Join Index can be created for PI change or for Aggregations.
+	•For AJIs, make sure the level of aggregation is at least 1 level above that of the underlying table.
+	•Ensure that the CPU savings due to using a JI are comparatively more than the overhead of JI maintenance.
+	•Try a join index as a final option, since a JI causes CPU and IO overhead when the underlying tables are maintained via insert/update/delete.
+
+ 
